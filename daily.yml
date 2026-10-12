@@ -1,0 +1,60 @@
+name: Daily news digest
+
+on:
+  schedule:
+    - cron: "0 1 * * *"      # 01:00 UTC = 06:30 IST (GitHub often starts jobs late; ready by ~7:00)
+  workflow_dispatch:          # lets you press "Run workflow" to test
+
+permissions:
+  contents: write
+
+concurrency: digest
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install (optional better article extraction)
+        run: pip install trafilatura || true
+
+      - name: Build digest
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: python news_digest.py --out out --quiet
+
+      - name: Get the published branch (keeps the 7-day archive)
+        run: |
+          git fetch origin gh-pages || true
+          if git rev-parse --verify origin/gh-pages >/dev/null 2>&1; then
+            git worktree add site origin/gh-pages
+          else
+            mkdir site
+          fi
+
+      - name: Update site (add today, delete pages older than 7 days)
+        run: python publish.py out/digest.html site
+
+      - name: Publish to GitHub Pages
+        working-directory: site
+        run: |
+          rm -rf .git
+          git init -q -b gh-pages
+          git config user.name "digest-bot"
+          git config user.email "digest-bot@users.noreply.github.com"
+          git add -A
+          git commit -qm "Digest $(date -u +%F)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages
+
+      - name: Keep the schedule alive (GitHub pauses idle repos after 60 days)
+        run: |
+          if [ "$(date -u +%u)" = "1" ]; then
+            git config user.name "digest-bot"; git config user.email "digest-bot@users.noreply.github.com"
+            git commit --allow-empty -qm "keepalive" && git push || true
+          fi
