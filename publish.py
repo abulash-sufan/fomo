@@ -32,4 +32,5 @@ if past:
     html = html.replace("</main>", block + "</main>")
 (site / "index.html").write_text(html, encoding="utf-8")
 (site / ".nojekyll").write_text("")
+(site / "robots.txt").write_text("User-agent: *\nDisallow: /\n")
 print("published", today, "| archive:", ", ".join(past) or "none")

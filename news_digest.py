@@ -863,7 +863,7 @@ def ai_digest(pool, quotes_line, now):
     print("  fetching article text...", file=sys.stderr)
     n_art = fetch_event_texts(sel)
     print(f"  AI pass 2: writing ({n_art} articles read)...", file=sys.stderr)
-    models, dropped, sections = set(), 0, {}
+    models, dropped, sections, fallback = set(), 0, {}, []
     if m1:
         models.add(m1)
     with cf.ThreadPoolExecutor(4) as ex:
@@ -879,10 +879,11 @@ def ai_digest(pool, quotes_line, now):
                 dropped += dr
                 sections[sec] = sd
             else:
+                fallback.append(sec)
                 sections[sec] = plain_section(sel[sec])
     ok = any(sections[s].get("points") or any(e["deep"] or len(e["points"]) for e in sections[s]["events"])
              for s in SECTION_ORDER) and models
-    return sections, sorted(models), {"articles": n_art, "dropped": dropped}
+    return sections, sorted(models), {"articles": n_art, "dropped": dropped, "fallback": fallback}
 
 
 # --------------------------------------------------------------------------------------
@@ -984,6 +985,11 @@ def render_html(data, now):
         return "".join(f"<li><b>{e(p['label'])}</b>{': ' if p['label'] else ''}{e(p['text'])}</li>" for p in pts)
 
     H = [f"<h1>News digest</h1><p class=sub>{e(ist)}</p>"]
+    st0 = data.get("ai_stats") or {}
+    if not data.get("ai_models"):
+        H.append("<p class=warn>AI summaries unavailable this run - showing publisher blurbs only.</p>")
+    elif st0.get("fallback"):
+        H.append(f"<p class=warn>AI write-up failed for: {e(', '.join(st0['fallback']))} - showing publisher blurbs there.</p>")
     nav = "".join(f'<a href="#{sid(sec)}">{e(sec)}</a>' for sec in SECTION_ORDER
                   if data["sections"][sec]["events"] or data["sections"][sec]["points"])
     nav += '<a href="#s-trending">Trending</a>'
@@ -1074,10 +1080,11 @@ def render_html(data, now):
            ".chip{display:inline-block;padding:6px 12px;border:1px solid var(--line);border-radius:99px;color:var(--acc);"
            "text-decoration:none;font-size:.8rem;margin:2px 4px 2px 0}"
            ".ago{color:var(--mut);font-size:.8rem;margin-left:auto}"
+           ".warn{background:#fef3c7;color:#78350f;border-radius:10px;padding:10px 12px;font-size:.9rem;margin:.5rem 0}"
            "footer{margin-top:2.5rem;color:var(--mut);font-size:.8rem;border-top:1px solid var(--line);padding-top:.8rem}"
            "@media(min-width:600px){body{font-size:16px}.quotes{grid-template-columns:repeat(5,1fr)}}")
     return ("<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,"
-            "initial-scale=1'><title>News digest</title><style>" + css + "</style><body><main>"
+            "initial-scale=1'><meta name=robots content='noindex,nofollow'><title>News digest</title><style>" + css + "</style><body><main>"
             + "".join(H) + "</main></body></html>")
 
 
