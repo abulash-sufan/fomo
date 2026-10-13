@@ -2,9 +2,11 @@ name: Daily news digest
 
 on:
   schedule:
-    - cron: "15 0 * * *"     # 05:45 IST  -> ready around 6:00
-    - cron: "15 6 * * *"     # 11:45 IST  -> ready around 12:00
-    - cron: "15 10 * * *"    # 15:45 IST  -> ready around 16:00
+    # GitHub often starts scheduled jobs 15-60 min late, so these are set ~1h before the time you want.
+    - cron: "37 23 * * *"    # 05:07 IST  -> ready by ~6:00
+    - cron: "37 5 * * *"     # 11:07 IST  -> ready by ~12:00
+    - cron: "37 9 * * *"     # 15:07 IST  -> ready by ~16:00
+    - cron: "50 9 * * *"    # TEST ONLY: 15:20 IST. Delete this line after the test.
   workflow_dispatch:          # lets you press "Run workflow" to test
 
 permissions:
