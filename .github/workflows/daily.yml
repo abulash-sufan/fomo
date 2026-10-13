@@ -4,6 +4,9 @@ on:
   schedule:
     # GitHub's scheduler is best-effort (runs can be late or skipped), so each slot gets 3 attempts.
     # The "guard" step skips an attempt if a digest was already built in the last 2.5 hours.
+    - cron: "40 16 * * *"    # TEST ONLY: 22:10 IST (delete after test)
+    - cron: "42 16 * * *"    # TEST ONLY: 22:12 IST (delete after test)
+    - cron: "45 16 * * *"    # TEST ONLY: 22:15 IST (delete after test)
     # Slot ~6:00 IST
     - cron: "17 23 * * *"    # 04:47 IST
     - cron: "47 23 * * *"    # 05:17 IST
