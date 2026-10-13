@@ -2,11 +2,20 @@ name: Daily news digest
 
 on:
   schedule:
-    # GitHub often starts scheduled jobs 15-60 min late, so these are set ~1h before the time you want.
-    - cron: "37 23 * * *"    # 05:07 IST  -> ready by ~6:00
-    - cron: "37 5 * * *"     # 11:07 IST  -> ready by ~12:00
-    - cron: "37 9 * * *"     # 15:07 IST  -> ready by ~16:00
-    - cron: "50 9 * * *"    # TEST ONLY: 15:20 IST. Delete this line after the test.
+    # GitHub's scheduler is best-effort (runs can be late or skipped), so each slot gets 3 attempts.
+    # The "guard" step skips an attempt if a digest was already built in the last 2.5 hours.
+    # Slot ~6:00 IST
+    - cron: "17 23 * * *"    # 04:47 IST
+    - cron: "47 23 * * *"    # 05:17 IST
+    - cron: "17 0 * * *"     # 05:47 IST
+    # Slot ~12:00 IST
+    - cron: "17 5 * * *"     # 10:47 IST
+    - cron: "47 5 * * *"     # 11:17 IST
+    - cron: "17 6 * * *"     # 11:47 IST
+    # Slot ~16:00 IST
+    - cron: "17 9 * * *"     # 14:47 IST
+    - cron: "47 9 * * *"     # 15:17 IST
+    - cron: "17 10 * * *"    # 15:47 IST
   workflow_dispatch:          # lets you press "Run workflow" to test
 
 permissions:
@@ -21,19 +30,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Guard (skip if a fresh digest already exists)
+        id: guard
+        run: |
+          skip=false
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            git fetch -q --depth=1 origin gh-pages || true
+            last=$(git log -1 --format=%ct origin/gh-pages 2>/dev/null || echo 0)
+            age=$(( $(date +%s) - last ))
+            echo "last digest is $age seconds old"
+            [ "$age" -lt 9000 ] && skip=true
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-python@v5
+        if: steps.guard.outputs.skip != 'true'
         with:
           python-version: "3.12"
 
       - name: Install (optional better article extraction)
+        if: steps.guard.outputs.skip != 'true'
         run: pip install trafilatura || true
 
       - name: Build digest
+        if: steps.guard.outputs.skip != 'true'
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: python news_digest.py --out out --quiet
 
       - name: Get the published branch (keeps the 7-day archive)
+        if: steps.guard.outputs.skip != 'true'
         run: |
           git fetch origin gh-pages || true
           if git rev-parse --verify origin/gh-pages >/dev/null 2>&1; then
@@ -43,9 +69,11 @@ jobs:
           fi
 
       - name: Update site (add today, delete pages older than 7 days)
+        if: steps.guard.outputs.skip != 'true'
         run: python publish.py out/digest.html site
 
       - name: Publish to GitHub Pages
+        if: steps.guard.outputs.skip != 'true'
         working-directory: site
         run: |
           rm -rf .git
@@ -57,6 +85,7 @@ jobs:
           git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages
 
       - name: Keep the schedule alive (GitHub pauses idle repos after 60 days)
+        if: steps.guard.outputs.skip != 'true'
         run: |
           if [ "$(date -u +%u)" = "1" ] && [ "$(date -u +%H)" -ge 23 ]; then
             git config user.name "digest-bot"; git config user.email "digest-bot@users.noreply.github.com"
