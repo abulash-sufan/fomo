@@ -1,13 +1,9 @@
 name: Daily news digest
 
+# Triggered from cron-job.org (6:00, 13:00, 20:00 IST) through the workflow_dispatch API.
+# You can also press "Run workflow" in the Actions tab at any time.
 on:
-  schedule:
-    # GitHub often starts scheduled jobs 15-60 min late, so these are set ~1h before the time you want.
-    - cron: "37 23 * * *"    # 05:07 IST  -> ready by ~6:00
-    - cron: "37 5 * * *"     # 11:07 IST  -> ready by ~12:00
-    - cron: "37 9 * * *"     # 15:07 IST  -> ready by ~16:00
-    - cron: "50 9 * * *"    # TEST ONLY: 15:20 IST. Delete this line after the test.
-  workflow_dispatch:          # lets you press "Run workflow" to test
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -25,13 +21,19 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install (optional better article extraction)
-        run: pip install trafilatura || true
+      - name: Install (article extraction + free text-to-speech voices)
+        run: |
+          pip install trafilatura || true
+          pip install edge-tts || true
 
       - name: Build digest
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: python news_digest.py --out out --quiet
+
+      - name: Make audio (optional - never fails the build)
+        continue-on-error: true
+        run: python make_audio.py out/digest.txt out/digest.mp3
 
       - name: Get the published branch (keeps the 7-day archive)
         run: |
@@ -43,7 +45,7 @@ jobs:
           fi
 
       - name: Update site (add today, delete pages older than 7 days)
-        run: python publish.py out/digest.html site
+        run: python publish.py out/digest.html site out/digest.mp3
 
       - name: Publish to GitHub Pages
         working-directory: site
@@ -55,10 +57,3 @@ jobs:
           git add -A
           git commit -qm "Digest $(date -u +%F)"
           git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages
-
-      - name: Keep the schedule alive (GitHub pauses idle repos after 60 days)
-        run: |
-          if [ "$(date -u +%u)" = "1" ] && [ "$(date -u +%H)" -ge 23 ]; then
-            git config user.name "digest-bot"; git config user.email "digest-bot@users.noreply.github.com"
-            git commit --allow-empty -qm "keepalive" && git push || true
-          fi

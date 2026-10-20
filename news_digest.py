@@ -1121,6 +1121,44 @@ def build(hours, top, use_ai=True):
             "raw": len(items), "stories": len(stories), "ai_models": models, "ai_stats": stats}, now
 
 
+def spoken_script(data, now):
+    """Plain-text script for text-to-speech: a short news bulletin, no links or labels."""
+    def say(t):
+        t = re.sub(r"https?://\S+", "", t)
+        t = re.sub(r"₹\s?([\d,\.]+)\s?(crore|lakh|billion|million)?", lambda m: f"{m.group(1)} {m.group(2) or ''} rupees".replace("  ", " "), t)
+        t = re.sub(r"\bRs\.?\s?([\d,\.]+)", r"\1 rupees", t)
+        t = re.sub(r"\bbps\b", "basis points", t)
+        t = re.sub(r"\bcr\b", "crore", t)
+        t = t.replace("$", "dollars ").replace("&", " and ").replace("%", " percent")
+        t = re.sub(r"\s+", " ", t).strip()
+        return t if t[-1:] in ".!?" else t + "."
+    ist = now.astimezone(IST)
+    part = "morning" if ist.hour < 12 else "afternoon" if ist.hour < 17 else "evening"
+    L = [f"Good {part}. This is your news digest for {ist:%A}, {ist.day} {ist:%B}.", ""]
+    for sec in SECTION_ORDER:
+        sd = data["sections"].get(sec) or {}
+        if not (sd.get("events") or sd.get("points")):
+            continue
+        L += [{"Markets": "Markets and economy."}.get(sec, sec + "."), ""]
+        for p in sd.get("points", []):
+            L.append(say(((p["label"] + ": ") if p["label"] else "") + p["text"]))
+        for ev in sd.get("events", []):
+            if not ev["points"]:
+                continue
+            if ev["deep"]:
+                L.append(say(ev["headline"]))
+                L += [say(p["text"]) for p in ev["points"]]
+            else:
+                L.append(say((ev["label"] or ev["headline"]) + ". " + " ".join(p["text"] for p in ev["points"])))
+            L.append("")
+        if sd.get("minor"):
+            L.append("In other news.")
+            L += [say(m["label"] + ". " + m["text"]) for m in sd["minor"]]
+        L.append("")
+    L.append("That was your news digest. Thanks for listening.")
+    return "\n".join(L)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--hours", type=int, default=24, help="look-back window (default 24)")
@@ -1136,6 +1174,8 @@ def main():
         f.write(md)
     with open(os.path.join(a.out, "digest.html"), "w", encoding="utf-8") as f:
         f.write(render_html(data, now))
+    with open(os.path.join(a.out, "digest.txt"), "w", encoding="utf-8") as f:
+        f.write(spoken_script(data, now))
     if not a.quiet:
         print(md)
     print(f"\n[{data['raw']} items -> {data['stories']} unique stories; "
